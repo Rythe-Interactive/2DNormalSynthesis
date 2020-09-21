@@ -1,31 +1,85 @@
-﻿using UnityEngine;
+﻿using Unity.Mathematics;
+using UnityEngine;
 [RequireComponent(typeof(SpriteRenderer))]
 public class TextureReader : MonoBehaviour
 {
-    public Texture2D m_Texture2D;
-    public Texture2D grayImg;
+    public string TextureName = "NAME";
 
-    private Color[] originalColor;
-    private Color32[] newColor;
+
+    public bool DoBlur = true;
+    public int GaussRadius = 3;
+    public bool m_DrawDebugNormalRays = false;
+    public bool m_UseAlphaForNormal = true;
+    private Texture2D m_Texture2D;
+    private Texture2D m_GrayScaleTexture;
+    private Texture2D m_NormalMap;
+    private Color[] m_originalColor;
+    private Color32[] m_newColor;
+
+    private int m_xDim;
+    private int m_yDim;
     void Start()
     {
         m_Texture2D = GetComponent<SpriteRenderer>().sprite.texture;
         if (m_Texture2D == null)
         {
-            Debug.Log("TEXTURE IS NULL!");
+            Debug.LogError("Trying to Read NULL Texture!");
             return;
         }
+        m_xDim = m_Texture2D.width;
+        m_yDim = m_Texture2D.height;
+        //init
+        m_GrayScaleTexture = new Texture2D(m_xDim, m_yDim, m_Texture2D.format, false);
+        m_NormalMap = new Texture2D(m_xDim, m_yDim, m_Texture2D.format, false);
 
-        grayImg = new Texture2D(m_Texture2D.width, m_Texture2D.height, m_Texture2D.format, false);
-        Graphics.CopyTexture(m_Texture2D, grayImg);
-        Color32[] pixels = grayImg.GetPixels32();
-        Color32[] changedPixels = new Color32[grayImg.width * grayImg.height];
+        Graphics.CopyTexture(m_Texture2D, m_GrayScaleTexture);
 
-        for (int x = 0; x < grayImg.width; x++)
+        GenerateGrayScaleTexture();
+        GenerateNormalMap();
+
+        //create new sprite
+
+        Sprite ogSprite = GetComponent<SpriteRenderer>().sprite;
+        Sprite HeightSprite = Sprite.Create(m_GrayScaleTexture, ogSprite.rect, ogSprite.pivot);
+        Sprite normalSprite = Sprite.Create(m_NormalMap, ogSprite.rect, ogSprite.pivot);
+        CreateSpriteObject(HeightSprite, Vector3.zero, false);
+        CreateSpriteObject(normalSprite, new Vector3(5, 0, 0), DoBlur);
+        //  var gaus = this.gameObject.AddComponent<ParallelGaussianBlur>();
+        //  gaus.Radial = GaussRadius;
+
+
+        //var bytes = m_NormalMap.EncodeToPNG();
+        //System.IO.File.WriteAllBytes(Application.dataPath + TextureName + "_normal.png", bytes);
+
+    }
+    private void CreateSpriteObject(Sprite sprite, Vector3 offset, bool addBlur)
+    {
+        var gO = new GameObject();
+        var sr = gO.AddComponent<SpriteRenderer>();
+
+        sr.sprite = sprite;
+        gO.transform.localScale = new Vector3(5, 5, 0);
+        gO.transform.position = new Vector3(227.5f, 405, 0) + offset;
+        if (addBlur)
         {
-            for (int y = 0; y < grayImg.height; y++)
+            var gaus = gO.AddComponent<ParallelGaussianBlur>();
+            gaus.Radial = GaussRadius;
+        }
+    }
+
+    private void GenerateGrayScaleTexture()
+    {
+        //read color data
+        Color32[] pixels = m_GrayScaleTexture.GetPixels32();
+        Color32[] changedPixels = new Color32[m_GrayScaleTexture.width * m_GrayScaleTexture.height];
+
+        for (int x = 0; x < m_xDim; x++)
+        {
+            for (int y = 0; y < m_yDim; y++)
             {
-                Color32 pixel = pixels[x + y * grayImg.width];
+                //read sample value
+                Color32 pixel = pixels[x + y * m_GrayScaleTexture.width];
+                //calculate gray value from color value
                 int p = ((256 * 256 + pixel.r) * 256 + pixel.b) * 256 + pixel.g;
                 int b = p % 256;
                 p = Mathf.FloorToInt(p / 256);
@@ -33,77 +87,99 @@ public class TextureReader : MonoBehaviour
                 p = Mathf.FloorToInt(p / 256);
                 int r = p % 256;
                 float l = (0.2126f * r / 255f) + 0.7152f * (g / 255f) + 0.0722f * (b / 255f);
-                Color c = new Color(l, l, l, pixels[x + y * grayImg.width].a);
-                Debug.Log("temp a " + pixels[x + y * grayImg.width].a);
-                changedPixels[x + y * grayImg.width] = c;
+                //store new color
+                Color c = new Color(l, l, l, pixels[x + y * m_GrayScaleTexture.width].a);
+                changedPixels[x + y * m_GrayScaleTexture.width] = c;
             }
         }
-        grayImg.SetPixels32(changedPixels);
-        grayImg.Apply(false);
-
-
-        //GetComponent<SpriteRenderer>().sprite.texture.SetPixels(grayImg.GetPixels());
-        //GetComponent<SpriteRenderer>().sprite.texture.Apply();
-
-        Sprite ogSprite = GetComponent<SpriteRenderer>().sprite;
-        Sprite newSprite = Sprite.Create(grayImg, ogSprite.rect, ogSprite.pivot);
-
-        var gO = new GameObject();
-
-        var sr = gO.AddComponent<SpriteRenderer>();
-
-        sr.sprite = newSprite;
-        gO.transform.localScale = new Vector3(5, 5, 0);
-        gO.transform.position = new Vector3(230, 405, 0);
-        //   spriteRenderer.spri
-        //originalColor = m_Texture2D.GetPixels();
-
-
-
-        //newColor = new Color32[originalColor.Length];
-
-        //Color32[] tex = TextureExtensions.ConvertGrayScale(m_Texture2D);
-        //m_Texture2D.SetPixels32(tex);
-        //m_Texture2D.Apply(false);
-        //m_Texture2D.Apply(false);
-        //var bytes = m_Texture2D.EncodeToPNG();
-
-        //System.IO.File.WriteAllBytes(Application.dataPath + "ImageSaveTest.png", bytes);
+        //set && apply GreyScale texture 
+        m_GrayScaleTexture.SetPixels32(changedPixels);
+        m_GrayScaleTexture.Apply(false);
 
     }
 
-    private void ReadColors()
-    {
 
-    }
-
-}
-public static class TextureExtensions
-{
-    public static Color32[] ConvertGrayScale(Texture2D tex)
+    private void GenerateNormalMap()
     {
-        Color32[] newColor = tex.GetPixels32();
-        Color32 pixel;
-        int index = 0;
-        for (int x = 0; x < tex.width; x++)
+        if (m_GrayScaleTexture == null)
         {
-            for (int y = 0; y < tex.height; y++)
+            Debug.LogError("trying to read NULL height map");
+            return;
+        }
+
+        Color32[] NormalMapData = new Color32[m_xDim * m_yDim];
+        Color[] pixels = m_GrayScaleTexture.GetPixels();
+        for (int x = 0; x < m_xDim; x++)
+        {
+            for (int y = 0; y < m_yDim; y++)
             {
-                pixel = newColor[index];
-                Debug.Log("color " + pixel);
-                int p = ((256 * 256 + pixel.r) * 256 + pixel.b) * 256 + pixel.g;
-                int b = p % 256;
-                p = Mathf.FloorToInt(p / 256);
-                int g = p % 256;
-                p = Mathf.FloorToInt(p / 256);
-                int r = p % 256;
-                byte l = (byte)((0.2126f * r / 255f) + 0.7152f * (g / 255f) + 0.0722f * (b / 255f));
-                Debug.Log(l);
-                pixel = new Color32(l, l, l, pixel.a);
-                newColor[index] = pixel;
+                //execute if alpha should be taken into account
+                if (m_UseAlphaForNormal)
+                {
+                    //if alpha is 0 store no color and skip normal calculation
+                    if (SampleHeightValue(x, y) == 0)
+                    {
+                        NormalMapData[x + m_xDim * y] = new Color32(0, 0, 0, 0);
+                        continue;
+                    }
+
+                }
+                //Create vectors for sample point & adjacent points
+                //p= sample point, U=Up, L = Left, R = RIght, D = Down
+                float3 P = new float3(x, y, SampleHeightValue(x, y));
+                float3 U = new float3(x, y + 1, SampleHeightValue(x, y + 1));
+                float3 D = new float3(x, y - 1, SampleHeightValue(x, y - 1));
+                float3 L = new float3(x - 1, y, SampleHeightValue(x - y, 1));
+                float3 R = new float3(x + 1, y, SampleHeightValue(x + 1, y));
+
+                //create direction vectors
+                float3 lp = L - P;
+                float3 pr = P - R;
+                float3 up = U - P;
+                float3 pd = P - D;
+
+                //cross the direction vectors
+                float3 up_X_lp = math.cross(up, lp);
+                float3 up_X_pr = math.cross(up, pr);
+                float3 pd_X_lp = math.cross(pd, lp);
+                float3 pd_X_pr = math.cross(pd, pr);
+
+                //add up crossed vectors && normalize result
+                float3 result = up_X_lp + up_X_pr + pd_X_lp + pd_X_pr;
+                Debug.Log("Result value" + result);
+                result = math.normalize(result);
+                float3 temp = new float3((x / m_xDim )*0.75f, 0, 0);
+                result += temp;
+                //visualize normals
+                if (m_DrawDebugNormalRays)
+                    Debug.DrawRay(new Vector3(x, y, 0), result * 5, Color.red, 100.0f);
+
+                //Color32 normal = new Color(result.x, result.y, result.z, 1);
+                Vector3 normalColorSpace = TextureExtensions.NormalToColorSpace(result);
+                Color32 normal = new Color(normalColorSpace.x, normalColorSpace.y, normalColorSpace.z, 1);
+
+                NormalMapData[x + m_xDim * y] = normal;
+                // NormalMapData
             }
         }
-        return newColor;
+        //store && set data
+        m_NormalMap.SetPixels32(NormalMapData);
+        m_NormalMap.Apply(false);
+    }
 
+    private float SampleHeightValue(int x, int y)
+    {
+        //return 0 if texture does not exist
+        if (m_GrayScaleTexture == null) return 0;
+
+        //return 0 if out of texture bounds
+        if (x < 0 || x > m_xDim || y < 0 || y > m_yDim) return 0;
+
+        //sample height
+        Color sample = m_GrayScaleTexture.GetPixel(x, y);
+        //Return 0 if the alpha is 0 
+        if (sample.a == 0) return 0;
+        //else return any color value which is the height value
+        return sample.r;
     }
 }
