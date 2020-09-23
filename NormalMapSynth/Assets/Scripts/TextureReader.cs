@@ -4,7 +4,7 @@ using UnityEngine;
 public class TextureReader : MonoBehaviour
 {
     public string TextureName = "NAME";
-
+    public float Depth = 1000.0f;
 
     public bool DoBlur = true;
     public int GaussRadius = 3;
@@ -48,8 +48,8 @@ public class TextureReader : MonoBehaviour
         //  gaus.Radial = GaussRadius;
 
 
-        //var bytes = m_NormalMap.EncodeToPNG();
-        //System.IO.File.WriteAllBytes(Application.dataPath + TextureName + "_normal.png", bytes);
+        var bytes = m_NormalMap.EncodeToPNG();
+        System.IO.File.WriteAllBytes(Application.dataPath + TextureName + "_normal.png", bytes);
 
     }
     private void CreateSpriteObject(Sprite sprite, Vector3 offset, bool addBlur)
@@ -60,11 +60,11 @@ public class TextureReader : MonoBehaviour
         sr.sprite = sprite;
         gO.transform.localScale = new Vector3(5, 5, 0);
         gO.transform.position = new Vector3(227.5f, 405, 0) + offset;
-        if (addBlur)
-        {
-            var gaus = gO.AddComponent<ParallelGaussianBlur>();
-            gaus.Radial = GaussRadius;
-        }
+        //if (addBlur)
+        //{
+        //    var gaus = gO.AddComponent<ParallelGaussianBlur>();
+        //    gaus.Radial = GaussRadius;
+        //}
     }
 
     private void GenerateGrayScaleTexture()
@@ -133,32 +133,40 @@ public class TextureReader : MonoBehaviour
                 float3 R = new float3(x + 1, y, SampleHeightValue(x + 1, y));
 
                 //create direction vectors
-                float3 lp = L - P;
+                float3 pL = P - L;
                 float3 pr = P - R;
-                float3 up = U - P;
+                float3 pu = P - U;
                 float3 pd = P - D;
 
                 //cross the direction vectors
-                float3 up_X_lp = math.cross(up, lp);
-                float3 up_X_pr = math.cross(up, pr);
-                float3 pd_X_lp = math.cross(pd, lp);
+                float3 pu_x_pl = math.cross(pu, pL);
+                float3 pr_x_pu = math.cross(pr, pu);
+                float3 pl_x_pd = math.cross(pL, pd);
                 float3 pd_X_pr = math.cross(pd, pr);
 
                 //add up crossed vectors && normalize result
-                float3 result = up_X_lp + up_X_pr + pd_X_lp + pd_X_pr;
+                float3 result = pu_x_pl + pr_x_pu + pl_x_pd + pd_X_pr;
                 Debug.Log("Result value" + result);
                 result = math.normalize(result);
-                float3 temp = new float3((x / m_xDim )*0.75f, 0, 0);
+                float3 temp = new float3((x / m_xDim) * 0.75f, 0, 0);
                 result += temp;
+
+                float dx = -SampleHeightValue(x - 1, y) + SampleHeightValue(x + 1, y);
+                float dy = -SampleHeightValue(x, y - 1) + SampleHeightValue(x, y + 1);
+                float3 n = new float3(-dx * (Depth / 1000.0f), dy * (Depth / 1000.0f), 1);
+
                 //visualize normals
                 if (m_DrawDebugNormalRays)
-                    Debug.DrawRay(new Vector3(x, y, 0), result * 5, Color.red, 100.0f);
+                    //   Debug.DrawRay(new Vector3(x, y, 0), result * 5, Color.red, 100.0f);
+                    Debug.DrawRay(new Vector3(x, y, 0), n * 5, Color.red, 100.0f);
 
                 //Color32 normal = new Color(result.x, result.y, result.z, 1);
-                Vector3 normalColorSpace = TextureExtensions.NormalToColorSpace(result);
-                Color32 normal = new Color(normalColorSpace.x, normalColorSpace.y, normalColorSpace.z, 1);
+                //     Vector3 normalColorSpace = TextureExtensions.NormalToColorSpace(result);
+                //    Vector3 normalColorSpace = TextureExtensions.NormalToColorSpace(n);
 
-                NormalMapData[x + m_xDim * y] = normal;
+                //Color32 normal = new Color(normalColorSpace.x, normalColorSpace.y, normalColorSpace.z, 1);
+
+                // NormalMapData[x + m_xDim * y] = normal;
                 // NormalMapData
             }
         }

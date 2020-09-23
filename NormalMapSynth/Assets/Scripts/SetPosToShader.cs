@@ -21,9 +21,9 @@ public class SetPosToShader : MonoBehaviour
         if (target == null || mat == null) return;
         else Debug.Log("updating!");
 
-        Vector3 delta = this.transform.position - target.transform.position;
-        delta = delta.normalized;
-        mat.SetVector("POS", delta);
+        // Vector3 delta = this.transform.position - target.transform.position;
+        //  delta = delta.normalized;
+        mat.SetVector("POS", this.transform.position);
 
     }
 }
