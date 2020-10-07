@@ -2,9 +2,10 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
-
+using ImageMagick;
 public class TextureProcessorWindow : EditorWindow
 {
+
     //positioning variables
     private Vector2 size = new Vector2(400, 400);
     private float leftPadding = 10.0f;
@@ -22,6 +23,9 @@ public class TextureProcessorWindow : EditorWindow
     private Texture2D m_Texture;
     private Texture2D m_Heightmap;
     private Texture2D m_NormalMap;
+    private Texture2D m_ThresholdMap;
+
+    private MagickImageFactory m_MagickFactory;
 
     //init window
     [MenuItem("Texture Processor/Normal Generator")]
@@ -32,6 +36,7 @@ public class TextureProcessorWindow : EditorWindow
         window.Show();
         Init();
     }
+
     //display data
     private void OnGUI()
     {
@@ -78,30 +83,97 @@ public class TextureProcessorWindow : EditorWindow
 
 
         //export
-        if (GUI.Button(new Rect(leftPadding, topPadding + rectPos.y + rectSize.y * 0.5f, 100, 25), "Export Texture"))
+        if (GUI.Button(new Rect(leftPadding, topPadding + rectPos.y + rectSize.y * 0.5f, 125, 25), "Apply!"))
+            UpdateWindow();
+
+        rectPos.y += (offset * 1.25f);
+
+        if (GUI.Button(new Rect(leftPadding, topPadding + rectPos.y + rectSize.y * 0.5f, 125, 25), "Export Texture!"))
             ExportTexture();
 
     }
 
-    private void Update()
+    private void UpdateWindow()
     {
+        if (m_Texture == null) return;
         UpdateTextures();
+        ApplyGrayScale();
+        ApplyBlur();
+        GenerateNormal();
+
+    }
+    private void ApplyBlur()
+    {
+        if (m_blur == false) return;
+        if (m_Heightmap == null) return;
+        MagickImage newImage = GenerateMagicImage(m_Heightmap);
+
+        newImage.AdaptiveBlur(m_BlurRadius);
+        WriteToTexture(newImage, ref m_Heightmap);
+    }
+    private void WriteToTexture(MagickImage input, ref Texture2D output)
+    {
+        //temp write to PNG
+        input.Write(Application.dataPath + @"\TestImageExport.png");
+
+        //read bytes form temp PNG
+        byte[] rawDataFromDisc = System.IO.File.ReadAllBytes(Application.dataPath + @"\TestImageExport.png");
+        //read bytes into texture && discard all alpha 0 values
+        output.LoadImage(rawDataFromDisc);
+        output.Mask(m_Texture);
+        output.Apply();
+        System.IO.File.Delete(Application.dataPath + @"\TestImageExport.png");
+    }
+    private MagickImage GenerateMagicImage(Texture2D tex)
+    {
+        //make null checks
+        if (tex == null) return null;
+        if (m_MagickFactory == null) m_MagickFactory = new MagickImageFactory();
+        //create Magic image
+        var temp = m_MagickFactory.Create(tex.EncodeToPNG());
+        temp.Format = MagickFormat.Png32;
+        MagickImage image = new MagickImage(temp);
+        return image;
+    }
+
+    private void ApplyGrayScale()
+    {
+        //return if input to grayScale is null
+        MagickImage tempImage = GenerateMagicImage(m_Texture);
+        //copy image
+        MagickImage grayScaleImage = tempImage;
+
+        //apply gray scale
+        grayScaleImage.Grayscale();
+
+        WriteToTexture(grayScaleImage, ref m_Heightmap);
+    }
+    private void GenerateNormal()
+    {
+        m_NormalMap = m_Heightmap.GenerateNormalFromHeight(m_NormalDepth);
+    }
+
+    private void Blur(Texture2D tex)
+    {
+
     }
     //update data
     private void UpdateTextures()
     {
         if (m_Texture == null) return;
-        Debug.Log("updating textures!");
-        m_Heightmap = m_Texture.GenerateHeightMap();
-        if (m_blur) GaussianBlur.Blur(ref m_Heightmap, m_BlurRadius);
-        m_NormalMap = m_Heightmap.GenerateNormalFromHeight(m_blur, m_NormalDepth);
+        m_Heightmap = new Texture2D(m_Texture.width, m_Texture.height, m_Texture.format, false);
+        m_Heightmap.Apply();
 
-
+        //  Debug.Log("updating textures!");
+        //  m_Heightmap = m_Texture.GenerateHeightMap();
+        //   if (m_blur) GaussianBlur.Blur(ref m_Heightmap, m_BlurRadius);
+        //   m_ThresholdMap = OtsuThreshold.ApplyThreshold(m_Heightmap, (int)OtsuThreshold.GetThreshold(m_Heightmap));
+        //   m_NormalMap = m_Heightmap.GenerateNormalFromHeight(m_blur, m_NormalDepth);
     }
     private void ExportTexture()
     {
         if (m_Texture == null) return;
-
+        UpdateWindow();
         var bytes = m_NormalMap.EncodeToPNG();
         System.IO.File.WriteAllBytes(Application.dataPath + "_normal.png", bytes);
         Debug.Log("Succesfully exported!");

@@ -137,7 +137,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!212 &668519742
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -231,7 +231,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4ef7c0d46cc012144a2d221e41d33432, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  tex: {fileID: 2800000, guid: b2b70bc03d497bb4d945d1ec937c60b2, type: 3}
+  ThresholdWidth: 4
+  ThresholdHeight: 4
+  thresholdPercentage: 0.1
+  tex: {fileID: 2800000, guid: e4cfa7f71fe12c64796d51fdab913c59, type: 3}
+  Name: MagickTest
+  Path: C:\Images\
 --- !u!4 &925191527
 Transform:
   m_ObjectHideFlags: 0
@@ -262,7 +267,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1112021571
 MonoBehaviour:
   m_ObjectHideFlags: 0

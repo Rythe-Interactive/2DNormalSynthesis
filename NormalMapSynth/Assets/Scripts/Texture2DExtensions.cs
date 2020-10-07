@@ -4,6 +4,39 @@ using UnityEngine;
 
 public static class Texture2DExtensions
 {
+    public static void Mask(this Texture2D tex, Texture2D mask)
+    {
+
+        Color[] c = mask.GetPixels();
+
+        for (int x = 0; x < mask.width; x++)
+        {
+            for (int y = 0; y < mask.height; y++)
+            {
+                int index = x + y * mask.width;
+                Color currentC = c[index];
+                if (currentC.a == 0)
+                    tex.SetPixel(x, y, new Color(0, 0, 0, 0));
+            }
+        }
+
+    }
+    public static void DiscardNullAlpha(this Texture2D tex)
+    {
+        Color[] c = tex.GetPixels();
+
+        for (int x = 0; x < tex.width; x++)
+        {
+            for (int y = 0; y < tex.height; y++)
+            {
+                int index = x + y * tex.width;
+                Color currentC = c[index];
+                if (currentC.a == 0)
+                    tex.SetPixel(x, y, new Color(0, 0, 0, 0));
+            }
+        }
+    }
+
 
     //we assume that the vector pased in is positiv
     public static Color NormalToUV(Vector3 normal)
@@ -60,7 +93,7 @@ public static class Texture2DExtensions
 
         return grayScale;
     }
-    public static Texture2D GenerateNormalFromHeight(this Texture2D tex, bool blur, float depth = 1000.0f, bool useAlphe = true)
+    public static Texture2D GenerateNormalFromHeight(this Texture2D tex, float depth = 1000.0f, bool useAlphe = true)
     {
 
         if (tex == null) return null;
