@@ -118,9 +118,13 @@ public static class Texture2DExtensions
 
                 float dx = -tex.SampleHeightValue(x - 1, y) + tex.SampleHeightValue(x + 1, y);
                 float dy = -tex.SampleHeightValue(x, y - 1) + tex.SampleHeightValue(x, y + 1);
-                float3 n = new float3(-dx * (depth / 1000.0f), dy * (depth / 1000.0f), 1);
+                float3 n = new float3(-dx * (depth / 1000.0f), dy * (depth / 1000.0f), 0);
+                n.z = 1;
+                n = math.normalize(n);
 
-                NormalMapData[x + tex.width * y] = Texture2DExtensions.NormalToUV(math.normalize(n));
+                //       NormalMapData[x + tex.width * y] = Texture2DExtensions.NormalToUV(math.normalize(n));
+                NormalMapData[x + tex.width * y] = Texture2DExtensions.NormalToUV(n);
+
             }
         }
         //store && set data

@@ -15,9 +15,16 @@ public class TextureProcessorWindow : EditorWindow
         ADAPTIVE_THRESHOLD
     }
     //positioning variables
-    private Vector2 size = new Vector2(400, 400);
-    private float leftPadding = 10.0f;
-    private float topPadding = 10.0f;
+    private Vector2 m_size = new Vector2(400, 400);
+    private float m_leftPadding = 10.0f;
+    private float m_topPadding = 10.0f;
+    private float m_rowSpacing = 25.0f;
+    private Vector2 m_ButtonSizeSmall = new Vector2(75, 20);
+    private Vector2 m_ButtonSizeLarge = new Vector2(150, 25);
+
+
+    private int m_executionOrder = 0;
+
 
     private float m_scale = 1.75f;
     private float offsetX = 225.0f;
@@ -27,6 +34,7 @@ public class TextureProcessorWindow : EditorWindow
     private float m_NormalDepth = 500.0f;
 
     private string m_FileName = "NAME";
+    private int m_selectedEffectIndex;
     //textures
     private Texture2D m_Texture;
     private Texture2D m_Heightmap;
@@ -34,12 +42,14 @@ public class TextureProcessorWindow : EditorWindow
 
     private MagickImageFactory m_MagickFactory;
 
-
+    private string[] m_EffectsDropDown;
     private List<AbstractEffect> m_effectsList = new List<AbstractEffect>();
     private List<SerializedObject> m_serializedObjects;
 
     private Dictionary<SerializedObject, AbstractEffect> m_SerializedObject_effectMap;
-    private Dictionary<SerializedObject, List<SerializedProperty>> m_SerializedObject_PropertyMap;
+    private Dictionary<int, List<SerializedProperty>> m_indexProperty_map;
+
+    private List<SerializedObject> m_ActiveEffects;
     //init window
     [MenuItem("Texture Processor/Normal Generator")]
     private static void Init()
@@ -62,8 +72,8 @@ public class TextureProcessorWindow : EditorWindow
         m_effectsList = new List<AbstractEffect>();
         m_serializedObjects = new List<SerializedObject>();
         m_SerializedObject_effectMap = new Dictionary<SerializedObject, AbstractEffect>();
-        m_SerializedObject_PropertyMap = new Dictionary<SerializedObject, List<SerializedProperty>>();
-
+        m_indexProperty_map = new Dictionary<int, List<SerializedProperty>>();
+        m_ActiveEffects = new List<SerializedObject>();
         //find all Implementations of the abstract class "AbstractEffect"
         foreach (Type effect in Assembly.GetAssembly(typeof(AbstractEffect)).GetTypes()
             .Where(TheType => TheType.IsClass && !TheType.IsAbstract && TheType.IsSubclassOf(typeof(AbstractEffect))))
@@ -79,34 +89,15 @@ public class TextureProcessorWindow : EditorWindow
         }
 
 
-        //create serialized properties to display in editor window
-        int index = 0;
-        foreach (SerializedObject SObject in m_serializedObjects)
+        m_EffectsDropDown = new string[m_effectsList.Count];
+        int i = 0;
+        foreach (AbstractEffect effect in m_effectsList)
         {
-            FieldInfo[] fieldInfo;
-            AbstractEffect currentEffect = m_effectsList[index];
-            //   m_SerializedObject_effectMap.Add(SObject, currentEffect);
-            fieldInfo = currentEffect.GetType().GetFields();
-            m_SerializedObject_effectMap.Add(SObject, currentEffect);
-            List<SerializedProperty> tempList = new List<SerializedProperty>();
-
-            foreach (FieldInfo info in fieldInfo)
-            {
-                // m_serializedPropertiyList.Add(SObject.FindProperty(info.Name));
-                SerializedProperty tempProperty = SObject.FindProperty(info.Name);
-
-                if (info.Name == "ExecutionOrder")
-                {
-                    tempProperty.intValue = index;
-                    index++;
-                }
-
-                tempList.Add(tempProperty);
-            }
-            SObject.ApplyModifiedProperties();
-            m_SerializedObject_PropertyMap.Add(SObject, tempList);
-
+            m_EffectsDropDown[i] = effect.ToString();
+            i++;
         }
+        m_selectedEffectIndex = 0;
+        m_executionOrder = 0;
     }
     public void Awake()
     {
@@ -120,89 +111,182 @@ public class TextureProcessorWindow : EditorWindow
 
         return null;
     }
+    private void AddEffect()
+    {
+        if (m_effectsList == null) return;
+
+        //init effect list & fetch effect based on selected index
+        if (m_ActiveEffects == null) m_ActiveEffects = new List<SerializedObject>();
+        AbstractEffect currentEffect = m_effectsList[m_selectedEffectIndex];
+
+        //init serialized object list & add new serialized object
+        if (m_serializedObjects == null) m_serializedObjects = new List<SerializedObject>();
+        SerializedObject currentSObj = new SerializedObject(currentEffect);
+        m_serializedObjects.Add(currentSObj);
+        m_ActiveEffects.Add(currentSObj);
+
+        //Store serialized object & effect in a dictionary
+        if (m_SerializedObject_effectMap == null) m_SerializedObject_effectMap = new Dictionary<SerializedObject, AbstractEffect>();
+        m_SerializedObject_effectMap.Add(currentSObj, currentEffect);
+
+        //store properties in a dictionary, also set execution order 
+        if (m_indexProperty_map == null) m_indexProperty_map = new Dictionary<int, List<SerializedProperty>>();
+
+        FieldInfo[] fieldInfo;
+        fieldInfo = currentEffect.GetType().GetFields();
+        List<SerializedProperty> tempList = new List<SerializedProperty>();
+        foreach (FieldInfo info in fieldInfo)
+        {
+            SerializedProperty tempProperty = currentSObj.FindProperty(info.Name);
+            if (info.Name == "ExecutionOrder")
+            {
+                tempProperty.intValue = m_executionOrder;
+            }
+            if (info.Name == "ID")
+            {
+                tempProperty.intValue = m_executionOrder;
+            }
+            tempList.Add(tempProperty);
+        }
+        currentSObj.ApplyModifiedProperties();
+        m_indexProperty_map.Add(m_executionOrder, tempList);
+
+        m_executionOrder++;
+    }
+    private void RemoveObject(SerializedObject selectedObject)
+    {
+        int id = selectedObject.FindProperty("ID").intValue;
+        m_indexProperty_map.Remove(id);
+        m_ActiveEffects.Remove(selectedObject);
+        m_SerializedObject_effectMap.Remove(selectedObject);
+    }
     //display data
     private void OnGUI()
     {
-        int index = 0;
+
+        ///
+        ///Adding effects
+        ///
+        GUI.BeginGroup(new Rect(m_leftPadding, m_topPadding, 300, 200));
+        m_selectedEffectIndex = EditorGUILayout.Popup("Effect", m_selectedEffectIndex, m_EffectsDropDown);
+        if (GUI.Button(new Rect(new Vector2(0, m_topPadding + m_rowSpacing), m_ButtonSizeSmall), "Add Effect"))
+            AddEffect();
+        GUI.EndGroup();
+
+        ///
+        ///Displaying effects & their properties
+        ///
+        GUI.BeginGroup(new Rect(m_leftPadding, m_topPadding + 100, 450, 600));
         //display properties of effects
-        foreach (SerializedObject sObject in m_SerializedObject_PropertyMap.Keys)
-        {
-            //find Name of effect
-            SerializedProperty NameProperty = FindProperty("Name", m_SerializedObject_PropertyMap[sObject]);
-            string EffectName = "Missing Name Field";
-            if (NameProperty != null) EffectName = NameProperty.stringValue;
-            //dispaly Effect label && collapse checkbox
-            EditorGUI.LabelField(new Rect(leftPadding, topPadding + offsetY * index, 200, 20), EffectName);
+        int index = 0;
+        if (m_ActiveEffects != null)
+            if (m_ActiveEffects.Count > 0)
+                foreach (SerializedObject sObject in m_ActiveEffects)
+                {
+                    int id = sObject.FindProperty("ID").intValue;
+                    //find Name of effect
+                    SerializedProperty NameProperty = FindProperty("Name", m_indexProperty_map[id]);
+                    string EffectName = "Missing Property Field";
+                    if (NameProperty != null) EffectName = NameProperty.stringValue;
+                    //dispaly Effect label && collapse checkbox
+                    EditorGUI.LabelField(new Rect(0, offsetY * index * 0.88f, 200, 20), EffectName);
 
+                    bool collapse = false;
+                    //skim for Collapse bool
+                    SerializedProperty collapseProperty = FindProperty("Collapse", m_indexProperty_map[id]);
+                    if (collapseProperty != null)
+                    {
+                        EditorGUI.PropertyField
+                        (new Rect(offsetX, offsetY * index * 0.88f, 200, 20), collapseProperty, new GUIContent(collapseProperty.name));
+                        sObject.ApplyModifiedProperties();
+                        collapse = collapseProperty.boolValue;
+                    }
+                    index++;
 
-            bool collapse = false;
-            //skim for Collapse bool
-            SerializedProperty collapseProperty = FindProperty("Collapse", m_SerializedObject_PropertyMap[sObject]);
-            if (collapseProperty != null)
-            {
-                EditorGUI.PropertyField
-                (new Rect(leftPadding + offsetX, topPadding + offsetY * index, 200, 20), collapseProperty, new GUIContent(collapseProperty.name));
-                sObject.ApplyModifiedProperties();
-                collapse = collapseProperty.boolValue;
-                index++;
-            }
+                    //skip rest of property dispaly if collapse is true
+                    if (collapse) continue;
 
-            //skip rest of property dispaly if collapse is true
-            if (collapse) continue;
+                    //remove effect, call onGUI again and return this OnGUI since the collection of effects has been modified
+                    if (GUI.Button(new Rect(new Vector2(offsetX, offsetY * index), m_ButtonSizeSmall), "Remove"))
+                    {
+                        RemoveObject(sObject);
+                        OnGUI();
+                        return;
+                    }
 
-            //display rest of properties skip collapse
-            foreach (SerializedProperty property in m_SerializedObject_PropertyMap[sObject])
-            {
-                //skip properties
-                if (property.name == "Collapse" || property.name == "Name") continue;
-                EditorGUI.PropertyField
-                (new Rect(leftPadding, topPadding + offsetY * index, 200, 20), property, new GUIContent(property.name));
+                    //  display rest of properties skip collapse
+                    foreach (SerializedProperty property in m_indexProperty_map[id])
+                    {
+                        //skip properties
+                        if (property.name == "Collapse" || property.name == "Name" || property.name == "ID") continue;
+                        EditorGUI.PropertyField
+                        (new Rect(0, offsetY * index * 0.88f, 200, 20), property, new GUIContent(property.name));
 
-                index++;
-            }
-            index++;
-            //apply changed properties
-            sObject.ApplyModifiedProperties();
-        }
+                        index++;
+                    }
+                    index++;
+                    //apply changed properties
+                    sObject.ApplyModifiedProperties();
+                }
+        GUI.EndGroup();
 
+        ///
+        ///Display textures & zoom lvl & file name
+        ///
+        GUI.BeginGroup(new Rect(m_leftPadding + 350, m_topPadding, 800, 800));
         //display Textures
-        Vector2 rectPos = new Vector2(leftPadding + offsetX * 2.25f, topPadding);
+        Vector2 rectPos = new Vector2(0, 0);
         Vector2 rectSize = new Vector2(200, 200);
 
         m_FileName = EditorGUI.TextField(new Rect(rectPos.x + offsetX, rectPos.y, 200, 20), "File Name", m_FileName);
 
         //scale textures
-        m_scale = EditorGUI.Slider(new Rect(rectPos, new Vector2(200, 20)), "Zoom", m_scale, 1f, 2.5f);
+        m_scale = EditorGUI.Slider(new Rect(rectPos, new Vector2(200, 20)), "Zoom", m_scale, 1f, 3.0f);
         rectPos.y += offsetY;
 
-        if (m_Texture) rectSize = new Vector2(m_Texture.width * m_scale * 2, m_Texture.height * m_scale * 2);
+        if (m_Texture) rectSize = new Vector2(m_Texture.width * m_scale * 1.5f, m_Texture.height * m_scale * 1.5f);
         m_Texture = (Texture2D)EditorGUI.ObjectField(new Rect(rectPos, rectSize), "texture", m_Texture, typeof(Texture2D));
 
-        rectPos.y += rectSize.y * 0.5f + offsetY * 0.5f;
+        rectSize *= 0.5f;
+        // rectPos.y += rectSize.y * 0.5f + offsetY * 0.5f;
+        rectPos.y += rectSize.y + offsetY * m_scale;
+
         rectPos.x += offsetX * 0.66f;
 
         if (m_Heightmap != null && m_DisplayHeightMap)
         {
-            EditorGUI.DrawPreviewTexture(new Rect(rectPos, rectSize * 0.5f), m_Heightmap);
-            rectPos.y += rectSize.y * 0.5f + offsetY * 0.5f;
+            EditorGUI.DrawPreviewTexture(new Rect(rectPos, rectSize), m_Heightmap);
+            rectPos.y += rectSize.y + offsetY * m_scale * 0.66f;
         }
 
         if (m_NormalMap != null)
         {
-            EditorGUI.DrawPreviewTexture(new Rect(rectPos, rectSize * 0.5f), m_NormalMap);
+            EditorGUI.DrawPreviewTexture(new Rect(rectPos, rectSize), m_NormalMap);
         }
+        GUI.EndGroup();
 
-
+        ///
+        ///Buttons for applying effect & exporting 
+        ///
+        GUI.BeginGroup(new Rect(m_leftPadding + 800, m_topPadding, 400, 400));
         //export // Buttons
-        if (GUI.Button(new Rect(leftPadding, topPadding + offsetY * index, 125, 25), "Apply!"))
+        if (GUI.Button(new Rect(Vector2.zero, m_ButtonSizeLarge), "Clear all  Effects!"))
+            RemoveAllEffects();
+        if (GUI.Button(new Rect(new Vector2(0, offsetY), m_ButtonSizeLarge), "Apply Effects!"))
             UpdateWindow();
-        index++;
-
-        if (GUI.Button(new Rect(leftPadding, topPadding + offsetY * index, 125, 25), "Export Texture!"))
+        if (GUI.Button(new Rect(new Vector2(0, offsetY * 2), m_ButtonSizeLarge), "Export Texture!"))
             ExportTexture();
+        GUI.EndGroup();
 
     }
-
+    private void RemoveAllEffects()
+    {
+        m_indexProperty_map.Clear();
+        m_ActiveEffects.Clear();
+        m_indexProperty_map.Clear();
+        m_SerializedObject_effectMap.Clear();
+        m_executionOrder = 0;
+    }
     private void UpdateWindow()
     {
         if (m_Texture == null) return;
@@ -217,12 +301,24 @@ public class TextureProcessorWindow : EditorWindow
         //create temporary dictionary 
         Dictionary<int, AbstractEffect> tempDictionary = new Dictionary<int, AbstractEffect>();
         //read in data
-        foreach (SerializedObject sObj in m_SerializedObject_effectMap.Keys)
+        //foreach (SerializedObject sObject in m_ActiveEffects)
+        //{
+        //    //find Name of effect
+        //    SerializedProperty NameProperty = FindProperty("Name", m_SerializedObject_PropertyMap[sObject]);
+        //    string EffectName = "Missing Property Field";
+        //    if (NameProperty != null) EffectName = NameProperty.stringValue;
+        //    //dispaly Effect label && collapse checkbox
+        //    EditorGUI.LabelField(new Rect(0, offsetY * index * 0.88f, 200, 20), EffectName);
+
+
+        if (m_SerializedObject_effectMap == null) return;
+        foreach (SerializedObject sObj in m_ActiveEffects)
         {
-            SerializedProperty executeProperty = FindProperty("Execute", m_SerializedObject_PropertyMap[sObj]);
+            int id = sObj.FindProperty("ID").intValue;
+            SerializedProperty executeProperty = FindProperty("Execute", m_indexProperty_map[id]);
             if (executeProperty.boolValue == false) continue;
 
-            SerializedProperty property = FindProperty("ExecutionOrder", m_SerializedObject_PropertyMap[sObj]);
+            SerializedProperty property = FindProperty("ExecutionOrder", m_indexProperty_map[id]);
             tempDictionary.Add(property.intValue, m_SerializedObject_effectMap[sObj]);
         }
         //sort 

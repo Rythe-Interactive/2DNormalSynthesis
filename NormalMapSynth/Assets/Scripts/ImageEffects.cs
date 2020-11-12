@@ -6,7 +6,7 @@ using ImageMagick;
 
 public abstract class AbstractEffect : ScriptableObject
 {
-
+    public int ID = 0;
     public bool Collapse = false;
     public uint ExecutionOrder = 0;
     public bool Execute = true;
